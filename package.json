@@ -1,0 +1,42 @@
+{
+  "name": "bloxplus-launcher",
+  "productName": "BloxPlus Launcher",
+  "version": "1.0.0",
+  "description": "Launcher Roblox amélioré : fonctions BetterBLOX, admins, optimisation automatique et shaders.",
+  "main": "main.js",
+  "author": "bibouze",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "capture": "electron . --capture",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.bibouze.bloxplus",
+    "productName": "BloxPlus Launcher",
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**",
+      "renderer/**",
+      "overlay/**",
+      "presets/**",
+      "assets/**"
+    ],
+    "extraResources": [
+      { "from": "presets", "to": "presets" }
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
