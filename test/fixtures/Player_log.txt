@@ -1,0 +1,6 @@
+2026-10-24T10:00:00.100Z,0.1,abcd,6 [FLog::Output] Roblox starting
+2026-10-24T10:00:05.200Z,5.2,abcd,6 [FLog::GameJoinUtil] ! Joining game '11111111-2222-3333-4444-555555555555' place 920587237 at 128.116.1.2
+2026-10-24T10:00:06.300Z,6.3,abcd,6 [FLog::Output] GameJoinLoadTime placeid:920587237, universeid:3317771874, ok
+2026-10-24T10:00:07.400Z,7.4,abcd,6 [FLog::Network] UDMUX Address = 128.116.9.9, Port = 53640
+2026-10-24T10:30:00.000Z,1800,abcd,6 [FLog::Network] Time to disconnect replication data: 0.01
+2026-10-24T10:31:00.000Z,1860,abcd,6 [FLog::GameJoinUtil] ! Joining game '99999999-2222-3333-4444-555555555555' place 142823291 at 128.116.5.5
