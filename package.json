@@ -8,8 +8,11 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "prestart": "npm run build:gardien",
     "capture": "electron . --capture",
     "test": "node --test",
+    "build:gardien": "node scripts/build-gardien.js",
+    "predist": "npm run build:gardien",
     "dist": "electron-builder --win"
   },
   "devDependencies": {
@@ -37,6 +40,10 @@
       {
         "from": "presets",
         "to": "presets"
+      },
+      {
+        "from": "native/gardien/gardien.exe",
+        "to": "gardien.exe"
       }
     ],
     "win": {

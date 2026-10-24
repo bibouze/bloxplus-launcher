@@ -8,3 +8,4 @@ CLAUDE.md
 coordination/
 .ignore
 versions/
+native/gardien/*.exe
