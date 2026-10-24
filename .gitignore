@@ -2,3 +2,9 @@ node_modules/
 dist/
 captures/
 *.log
+cerveau/
+CLAUDE.md
+.claude/
+coordination/
+.ignore
+versions/

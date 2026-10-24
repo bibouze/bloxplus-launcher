@@ -9,6 +9,7 @@
   "scripts": {
     "start": "electron .",
     "capture": "electron . --capture",
+    "test": "node --test",
     "dist": "electron-builder --win"
   },
   "devDependencies": {
@@ -25,18 +26,34 @@
       "renderer/**",
       "overlay/**",
       "presets/**",
-      "assets/**"
+      "assets/**",
+      "!**/*.map",
+      "!**/*.md",
+      "!**/*.ts",
+      "!**/test/**",
+      "!**/.git*"
     ],
     "extraResources": [
-      { "from": "presets", "to": "presets" }
+      {
+        "from": "presets",
+        "to": "presets"
+      }
     ],
     "win": {
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": "assets/icon.png"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "electronLanguages": [
+      "fr",
+      "en-US"
+    ],
+    "compression": "maximum"
   }
 }
