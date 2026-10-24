@@ -118,7 +118,6 @@ a { color: var(--accent-2); }
 /* ---------- Composants ---------- */
 .card {
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px;
-  backdrop-filter: blur(6px);
 }
 .card + .card { margin-top: 16px; }
 .grid > .card + .card, .row > .card + .card { margin-top: 0; }
@@ -252,7 +251,7 @@ a { color: var(--accent-2); }
 .game-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 .game-card .thumb { aspect-ratio: 1; background: var(--panel-2); position: relative; }
 .game-card .thumb img { width: 100%; height: 100%; object-fit: cover; }
-.game-card .thumb .badge { position: absolute; left: 8px; top: 8px; background: rgba(0, 0, 0, 0.6); color: #fff; backdrop-filter: blur(4px); }
+.game-card .thumb .badge { position: absolute; left: 8px; top: 8px; background: rgba(0, 0, 0, 0.6); color: #fff; }
 .game-card .info { padding: 10px 12px 12px; }
 .game-card .name { font-weight: 600; font-size: 13px; }
 .game-card .sub { font-size: 11.5px; color: var(--muted); display: flex; gap: 10px; margin-top: 3px; }
@@ -340,8 +339,7 @@ a { color: var(--accent-2); }
 
 .empty { text-align: center; padding: 40px 20px; color: var(--muted); }
 .empty svg { width: 40px; height: 40px; stroke: var(--dim); fill: none; stroke-width: 1.5; margin-bottom: 10px; }
-.skeleton { background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04)); background-size: 200% 100%; animation: shimmer 1.3s infinite; border-radius: 12px; }
-@keyframes shimmer { to { background-position: -200% 0; } }
+.skeleton { background: rgba(255, 255, 255, 0.06); border-radius: 12px; }
 .spin { width: 16px; height: 16px; border: 2px solid rgba(255, 255, 255, 0.25); border-top-color: #fff; border-radius: 50%; animation: rot 0.7s linear infinite; display: inline-block; }
 @keyframes rot { to { transform: rotate(360deg); } }
 
@@ -357,7 +355,7 @@ a { color: var(--accent-2); }
 .toast.warn::before { background: var(--warn); }
 
 /* Fenêtre modale */
-.modal-back { position: fixed; inset: 44px 0 0 0; z-index: 40; background: rgba(4, 5, 9, 0.7); backdrop-filter: blur(4px); display: grid; place-items: center; animation: fade 0.15s ease both; }
+.modal-back { position: fixed; inset: 44px 0 0 0; z-index: 40; background: rgba(4, 5, 9, 0.7); display: grid; place-items: center; animation: fade 0.15s ease both; }
 .modal {
   width: min(980px, calc(100vw - 80px)); max-height: calc(100vh - 110px); overflow-y: auto; border-radius: 20px;
   background: #10131d; border: 1px solid var(--border-2); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
@@ -380,3 +378,20 @@ kbd { font-family: inherit; font-size: 11px; padding: 1px 6px; border-radius: 5p
 @media (max-width: 1180px) {
   .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Section repliable (Optimisation › Réglages avancés) */
+details.advanced > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+details.advanced > summary::-webkit-details-marker { display: none; }
+details.advanced > summary h2 { font: 600 16px var(--font-display); margin: 0; display: flex; align-items: center; gap: 9px; }
+details.advanced > summary h2 svg { width: 18px; height: 18px; stroke: var(--accent); fill: none; stroke-width: 1.9; }
+details.advanced > summary::after { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin-right: 4px; }
+details.advanced[open] > summary::after { transform: rotate(225deg); }
+details.advanced[open] > summary { margin-bottom: 8px; }
+
+/* Accueil : jeux récents avec Rejoindre, amis connectés */
+.recent-item { display: flex; flex-direction: column; gap: 8px; }
+.friends-strip { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+
+/* Progression de l'installation / mise à jour de Roblox (événement roblox:progress) */
+#roblox-progress { background: #12151f; position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); width: min(480px, calc(100vw - 280px)); z-index: 45; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5); }
+#roblox-progress[hidden] { display: none; }

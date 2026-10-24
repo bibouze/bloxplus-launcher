@@ -35,7 +35,6 @@ Views.optimize = {
           <div class="card-title"><h2>${icon('monitor')} Réglages Windows</h2></div>
           <div class="setting"><div class="label"><b>Carte graphique haute performance</b><span>Force Windows à utiliser le GPU dédié pour Roblox (utile sur les portables).</span></div>${toggleHtml('tw-gpu', tweaks.gpu)}</div>
           <div class="setting"><div class="label"><b>Désactiver les optimisations plein écran</b><span>Peut réduire la latence et les saccades sur certains PC.</span></div>${toggleHtml('tw-fso', tweaks.fso)}</div>
-          <div class="setting"><div class="label"><b>Priorité haute au lancement</b><span>Donne la priorité au processeur pour Roblox quand il démarre depuis BloxPlus.</span></div>${toggleHtml('tw-prio', App.store.launch.highPriority)}</div>
         </div>
         <div class="card">
           <div class="card-title"><h2>${icon('broom')} Nettoyage & état actuel</h2></div>
@@ -49,7 +48,13 @@ Views.optimize = {
             <dt>Plein écran</dt><dd>${game.Fullscreen ? 'Oui' : 'Non'}</dd>
           </dl>` : '<span class="muted small">Réglages Roblox introuvables (lance Roblox une première fois).</span>'}
         </div>
-      </div>`;
+      </div>
+
+      <details class="card mt advanced" id="adv">
+        <summary><h2>${icon('flag')} Réglages avancés <span class="muted small">FastFlags</span></h2></summary>
+        <p class="hint">Pour les joueurs qui veulent aller plus loin : réglages lisibles, liste complète des FastFlags, import et export JSON.</p>
+        <div id="adv-body" class="mt"></div>
+      </details>`;
 
     this.drawHardware(el, hw);
     this.drawPresets(el, hw);
@@ -62,7 +67,15 @@ Views.optimize = {
     }));
     el.querySelector('#tw-gpu').addEventListener('change', (e) => busy(null, async () => { await bp.optimizer.setTweak('gpu', e.target.checked); toast('Préférence GPU mise à jour', 'ok'); }));
     el.querySelector('#tw-fso').addEventListener('change', (e) => busy(null, async () => { await bp.optimizer.setTweak('fso', e.target.checked); toast('Réglage plein écran mis à jour', 'ok'); }));
-    el.querySelector('#tw-prio').addEventListener('change', (e) => App.setStore('launch.highPriority', e.target.checked));
+    // L'éditeur de FastFlags n'est construit qu'à la première ouverture de la section.
+    el.querySelector('#adv').addEventListener('toggle', (e) => {
+      if (!e.target.open || e.target.dataset.ready) return;
+      e.target.dataset.ready = '1';
+      FFlagsEditor.mount(el.querySelector('#adv-body')).catch((err) => {
+        e.target.dataset.ready = '';
+        el.querySelector('#adv-body').innerHTML = `<div class="notice bad">${icon('alert')}<div>Erreur : ${esc(err.message)}</div></div>`;
+      });
+    });
     el.querySelector('#clean').addEventListener('click', (e) => busy(e.currentTarget, async () => {
       const freed = await bp.optimizer.clean();
       toast(`Nettoyage terminé : ${fmtBytes(freed)} libérés`, 'ok');

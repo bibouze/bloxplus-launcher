@@ -113,7 +113,7 @@ Views.games = {
             <button class="btn ghost sm" id="g-refresh">${icon('refresh')}</button>
           </div>
         </div>
-        <p class="hint" style="margin:-6px 0 10px">Le ping est celui que Roblox communique pour chaque serveur : plus il est bas, plus le serveur est proche de toi. La ville exacte du serveur s'affiche une fois connecté (option « Région du serveur » dans BetterBLOX).</p>
+        <p class="hint" style="margin:-6px 0 10px">Le ping est celui que Roblox communique pour chaque serveur : plus il est bas, plus le serveur est proche de toi. La ville exacte du serveur s'affiche une fois connecté (option « Région du serveur » dans Paramètres).</p>
         <div id="servers"></div>
         <div class="row mt"><button class="btn sm" id="g-more" hidden>Charger plus de serveurs</button></div>
       </div>`;

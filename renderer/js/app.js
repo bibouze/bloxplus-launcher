@@ -6,7 +6,6 @@ const NAV = [
   { id: 'friends', label: 'Amis', icon: 'friends' },
   { id: 'admins', label: 'Admins', icon: 'shield' },
   { section: 'Améliorer' },
-  { id: 'better', label: 'BetterBLOX', icon: 'sparkles' },
   { id: 'optimize', label: 'Optimisation', icon: 'gauge' },
   { id: 'shaders', label: 'Shaders', icon: 'palette' },
   { section: 'Launcher' },
@@ -35,11 +34,15 @@ const App = {
       if (ev.type === 'admins') toast('Un admin a été détecté dans ton serveur !', 'warn');
       Views[this.current]?.onTracker?.(ev);
     });
-    // Le compteur de session avance localement entre deux événements.
-    this.sessionTimer = setInterval(() => {
-      if (this.state.running) { this.state.sessionSeconds++; this.renderSessionPill(); }
-    }, 1000);
-    setInterval(async () => { this.state = await bp.roblox.state(); this.renderSessionPill(); }, 15000);
+    // Installation / mise à jour de Roblox et téléchargement des shaders (Cœur, CONTRACTS §2.2 et §2.4) :
+    // tant que ces canaux ne sont pas livrés, le preload les ignore et rien ne s'affiche.
+    bp.on('roblox:progress', (ev) => this.renderRobloxProgress(ev));
+    bp.on('shaders:progress', (ev) => Views.shaders.onProgress(ev));
+    setInterval(async () => {
+      if (document.hidden) return;
+      this.state = await bp.roblox.state();
+      this.renderSessionPill();
+    }, 15000);
 
     this.go('home');
   },
@@ -81,7 +84,36 @@ const App = {
     } catch { /* hors ligne */ }
   },
 
+  // Le compteur de session avance localement entre deux événements : la minuterie ne tourne que pendant une partie.
+  syncSessionTimer() {
+    if (this.state.running && !this.sessionTimer) {
+      this.sessionTimer = setInterval(() => { this.state.sessionSeconds++; this.renderSessionPill(); }, 1000);
+    } else if (!this.state.running && this.sessionTimer) {
+      clearInterval(this.sessionTimer);
+      this.sessionTimer = null;
+    }
+  },
+
+  // Bandeau « Roblox s'installe / se met à jour » (événement roblox:progress).
+  async renderRobloxProgress(ev) {
+    const el = $('#roblox-progress');
+    if (ev.phase === 'done' || ev.phase === 'error') {
+      el.hidden = true;
+      if (ev.phase === 'error') return toast(ev.message || "Impossible d'installer Roblox. Vérifie ta connexion et réessaie.", 'bad');
+      this.info = await bp.info(); // Roblox vient d'être installé ou mis à jour
+      return toast(`Roblox est prêt${ev.version ? ` (${ev.version})` : ''}`, 'ok');
+    }
+    const label = { check: 'Recherche de mises à jour de Roblox…', download: 'Téléchargement de Roblox', extract: "Installation de Roblox" }[ev.phase] || 'Roblox…';
+    const pct = ev.phase !== 'check' && ev.total ? Math.min(100, Math.round((ev.done / ev.total) * 100)) : 0;
+    const detail = ev.phase === 'download' && ev.total ? `${fmtBytes(ev.done)} / ${fmtBytes(ev.total)}` : ev.phase === 'extract' && ev.total ? `${ev.done} / ${ev.total}` : '';
+    el.hidden = false;
+    el.innerHTML = `
+      <div class="row"><b>${label}</b><span class="spacer"></span><span class="muted small">${detail} ${pct ? pct + ' %' : ''}</span></div>
+      <div class="bar"><i style="width:${pct}%"></i></div>`;
+  },
+
   renderSessionPill() {
+    this.syncSessionTimer();
     const el = $('#session-pill');
     const s = this.state;
     el.hidden = !s.running;

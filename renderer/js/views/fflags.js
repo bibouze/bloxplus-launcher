@@ -1,85 +1,26 @@
-// BetterBLOX : les fonctions de BetterStrap / BetterLauncher réunies ici.
-Views.better = {
-  async render(el) {
-    const [ff, modFiles] = await Promise.all([bp.fflags.get(), bp.mods.list()]);
-    const s = App.store;
+// Éditeur de FastFlags (réglages lisibles + table libre, import/export JSON). Monté dans Optimisation › Réglages avancés.
+const FFlagsEditor = {
+  async mount(el) {
+    const ff = await bp.fflags.get();
     this.flags = { ...ff.flags };
     this.allow = new Set(ff.allowlist);
     this.presetFlags = ff.presetFlags;
 
     el.innerHTML = `
-      <div class="view-head">
-        <div>
-          <h1>BetterBLOX</h1>
-          <p>Toutes les options de BetterStrap et BetterLauncher, intégrées au launcher : FastFlags, multi-instance, mods, région du serveur, suivi du temps de jeu et notifications.</p>
-        </div>
+      <div class="row wrap" style="justify-content:flex-end">
+        <button class="btn sm" id="ff-import">${icon('plus')} Importer du JSON</button>
+        <button class="btn sm" id="ff-export">${icon('copy')} Copier en JSON</button>
+        <button class="btn sm primary" id="ff-save">Enregistrer</button>
       </div>
-
-      <div class="grid grid-2">
-        <div class="card">
-          <div class="card-title"><h2>${icon('window')} Lancement</h2></div>
-          ${this.setting('multi', 'Multi-instance', 'Ouvre plusieurs fenêtres Roblox en même temps (plusieurs comptes ou serveurs).', s.launch.multiInstance)}
-          ${this.setting('mods', 'Appliquer mes mods', 'Copie le contenu de ton dossier de mods dans Roblox à chaque lancement.', s.launch.applyMods)}
-          ${this.setting('minimize', 'Réduire BloxPlus au lancement', 'Le launcher se range dans la barre des tâches quand le jeu démarre.', s.launch.minimizeOnLaunch)}
-        </div>
-        <div class="card">
-          <div class="card-title"><h2>${icon('bell')} Suivi & notifications</h2></div>
-          ${this.setting('overlay', 'Overlay du temps de jeu', 'Petite pastille toujours au-dessus du jeu avec la durée de la session.', s.overlay.enabled)}
-          ${this.setting('region', 'Région du serveur', 'Affiche la ville du serveur quand tu rejoins une partie (adresse du serveur envoyée à ipinfo.io).', s.notify.serverRegion)}
-          ${this.setting('friends', 'Amis en ligne', 'Notification quand un ami se connecte ou lance un jeu.', s.notify.friends)}
-          ${this.setting('admin', 'Admin sur mon serveur', "Notification si un admin de l'onglet Admins est sur ton serveur.", s.notify.adminInServer)}
-        </div>
-      </div>
-
-      <div class="card mt">
-        <div class="card-title">
-          <h2>${icon('folder')} Mods</h2>
-          <div class="row">
-            <button class="btn sm" id="mods-open">${icon('folder')} Ouvrir le dossier des mods</button>
-            <button class="btn sm danger" id="mods-restore">Restaurer les fichiers d'origine</button>
-          </div>
-        </div>
-        <p class="hint">Place dans ce dossier les fichiers à remplacer, avec la même arborescence que Roblox (ex. <span class="mono">content\\sounds\\ouch.ogg</span> pour le son de mort, <span class="mono">content\\textures\\Cursors\\KeyboardMouse\\ArrowCursor.png</span> pour le curseur). Les originaux sont sauvegardés.</p>
-        <div class="row wrap mt">${modFiles.length ? modFiles.slice(0, 30).map((f) => `<span class="badge mono">${esc(f)}</span>`).join('') : '<span class="muted small">Aucun mod pour le moment.</span>'}</div>
-      </div>
-
-      <div class="card mt">
-        <div class="card-title">
-          <h2>${icon('flag')} Éditeur de FastFlags</h2>
-          <div class="row">
-            <button class="btn sm" id="ff-import">${icon('plus')} Importer du JSON</button>
-            <button class="btn sm" id="ff-export">${icon('copy')} Copier en JSON</button>
-            <button class="btn sm primary" id="ff-save">Enregistrer</button>
-          </div>
-        </div>
-        <div class="notice warn">${icon('alert')}<div>Depuis septembre 2025, Roblox n'accepte plus qu'une <b>liste autorisée</b> de FastFlags. Les flags marqués <span class="badge ok">autorisé</span> fonctionnent ; les autres sont enregistrés mais seront probablement ignorés par Roblox.</div></div>
-        <div class="grid grid-2 mt" id="ff-friendly"></div>
-        <div class="section-title">Tous les flags</div>
-        <table class="table" id="ff-table"></table>
-        <div class="row mt">
-          <input class="input mono" id="ff-key" placeholder="NomDuFlag" style="flex:2">
-          <input class="input mono" id="ff-val" placeholder="Valeur" style="flex:1">
-          <button class="btn" id="ff-add">${icon('plus')} Ajouter</button>
-        </div>
+      <div class="notice warn mt">${icon('alert')}<div>Depuis septembre 2025, Roblox n'accepte plus qu'une <b>liste autorisée</b> de FastFlags. Les flags marqués <span class="badge ok">autorisé</span> fonctionnent ; les autres sont enregistrés mais seront probablement ignorés par Roblox.</div></div>
+      <div class="grid grid-2 mt" id="ff-friendly"></div>
+      <div class="section-title">Tous les flags</div>
+      <table class="table" id="ff-table"></table>
+      <div class="row mt">
+        <input class="input mono" id="ff-key" placeholder="NomDuFlag" style="flex:2">
+        <input class="input mono" id="ff-val" placeholder="Valeur" style="flex:1">
+        <button class="btn" id="ff-add">${icon('plus')} Ajouter</button>
       </div>`;
-
-    const bind = (id, key, after) => el.querySelector(`#t-${id}`).addEventListener('change', async (e) => {
-      await App.setStore(key, e.target.checked);
-      after?.(e.target.checked);
-    });
-    bind('multi', 'launch.multiInstance', (on) => toast(on ? 'Multi-instance activé : lance Roblox depuis BloxPlus pour ouvrir plusieurs fenêtres.' : 'Multi-instance désactivé'));
-    bind('mods', 'launch.applyMods');
-    bind('minimize', 'launch.minimizeOnLaunch');
-    bind('overlay', 'overlay.enabled');
-    bind('region', 'notify.serverRegion');
-    bind('friends', 'notify.friends');
-    bind('admin', 'notify.adminInServer');
-
-    el.querySelector('#mods-open').addEventListener('click', () => bp.mods.open());
-    el.querySelector('#mods-restore').addEventListener('click', (e) => busy(e.currentTarget, async () => {
-      const n = await bp.mods.restore();
-      toast(n ? `${n} fichier(s) restauré(s)` : 'Aucun mod à retirer', 'ok');
-    }));
 
     el.querySelector('#ff-save').addEventListener('click', (e) => busy(e.currentTarget, () => this.save()));
     el.querySelector('#ff-export').addEventListener('click', async () => {
@@ -98,10 +39,6 @@ Views.better = {
     });
 
     this.drawFlags(el);
-  },
-
-  setting(id, title, desc, checked) {
-    return `<div class="setting"><div class="label"><b>${title}</b><span>${desc}</span></div>${toggleHtml('t-' + id, checked)}</div>`;
   },
 
   drawFlags(el) {
