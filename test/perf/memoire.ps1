@@ -1,4 +1,4 @@
-# Additionne la mémoire de travail (Mo) de tous les processus d'une application Electron.
+﻿# Additionne la mémoire de travail (Mo) de tous les processus d'une application Electron.
 # Usage : memoire.ps1 -Racine <dossier contenant electron.exe ou l'app> [-Lancer] [-Attente 12] [-Json]
 #   -Lancer : démarre `electron.exe <Racine>` , attend, mesure, ferme.
 #   Sans -Lancer : mesure les processus déjà ouverts dont le chemin commence par -Chemin (défaut : electron/BloxPlus).
@@ -7,6 +7,8 @@ param(
   [switch]$Lancer,
   [int]$Attente = 12,
   [string]$Chemin = "",
+  [string]$Motif = "",   # mesure les processus dont la ligne de commande contient ce motif (ex. le --user-data-dir d un essai) + gardien.exe
+
   [switch]$Json
 )
 $ErrorActionPreference = 'Stop'
@@ -21,7 +23,9 @@ if ($Lancer) {
 if (-not $Chemin) { $Chemin = 'electron.exe' }
 $cheminNorm = $Chemin.Replace("/", "\")
 $tous = Get-CimInstance Win32_Process
-if ($proc) {
+if ($Motif) {
+  $liste = $tous | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Motif) -and $_.Name -ne "powershell.exe" -or $_.Name -eq "gardien.exe" }
+} elseif ($proc) {
   # Seuls les descendants du processus lancé (d’autres Electron peuvent tourner sur la machine).
   $ids = @($proc.Id); $on = $true
   while ($on) { $on = $false; foreach ($q in $tous) { if ($ids -contains $q.ParentProcessId -and $ids -notcontains $q.ProcessId) { $ids += $q.ProcessId; $on = $true } } }
@@ -32,7 +36,7 @@ if ($proc) {
 $details = foreach ($p in $liste) {
   $gp = Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue
   if ($gp) {
-    $type = if ($p.CommandLine -match '--type=([\w-]+)') { $Matches[1] } else { 'main' }
+    $type = if ($p.Name -eq "gardien.exe") { "gardien" } elseif ($p.CommandLine -match '--type=([\w-]+)') { $Matches[1] } else { 'main' }
     [pscustomobject]@{ Pid = $p.ProcessId; Type = $type; WorkingSetMo = [math]::Round($gp.WorkingSet64 / 1MB, 1); PrivateMo = [math]::Round($gp.PrivateMemorySize64 / 1MB, 1) }
   }
 }
