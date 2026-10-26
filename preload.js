@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('bp', {
   openPath: invoke('shell:openPath'),
   store: { get: invoke('store:get'), set: invoke('store:set') },
   api: invoke('api:request'),
-  roblox: { launch: invoke('roblox:launch'), state: invoke('roblox:state') },
+  roblox: { launch: invoke('roblox:launch'), install: invoke('roblox:install'), state: invoke('roblox:state') },
   fflags: { get: invoke('fflags:get'), set: invoke('fflags:set') },
   optimizer: {
     detect: invoke('optimizer:detect'),
@@ -22,11 +22,11 @@ contextBridge.exposeInMainWorld('bp', {
     clean: invoke('optimizer:clean'),
   },
   mods: { list: invoke('mods:list'), open: invoke('mods:open'), restore: invoke('mods:restore') },
-  shaders: { status: invoke('shaders:status'), presets: invoke('shaders:presets'), import: invoke('shaders:import'), set: invoke('shaders:set') },
+  shaders: { status: invoke('shaders:status'), presets: invoke('shaders:presets'), set: invoke('shaders:set') },
   protocol: { get: invoke('protocol:get'), set: invoke('protocol:set') },
   playtime: invoke('playtime:get'),
   on: (channel, fn) => {
-    if (!['tracker:event', 'win:state', 'overlay:update'].includes(channel)) return;
+    if (!['tracker:event', 'win:state', 'overlay:update', 'roblox:progress', 'shaders:progress'].includes(channel)) return;
     ipcRenderer.on(channel, (_e, payload) => fn(payload));
   },
 });

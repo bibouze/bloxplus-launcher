@@ -1,12 +1,13 @@
 // BloxPlus Launcher — processus principal.
-const { app, BrowserWindow, ipcMain, shell, Notification, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Notification, screen, Tray, Menu, nativeImage } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 
 const { JsonStore } = require('./lib/store');
-const { findPlayerVersionDir } = require('./lib/paths');
+const { findPlayerVersionDir, versionRoots, bloxplusVersions, logsDir } = require('./lib/paths');
+const installer = require('./lib/installer');
 const fflags = require('./lib/fflags');
 const gamesettings = require('./lib/gamesettings');
 const mods = require('./lib/mods');
@@ -15,6 +16,7 @@ const optimizer = require('./lib/optimizer');
 const protocol = require('./lib/protocol');
 const api = require('./lib/api');
 const { Tracker, levelFromXp } = require('./lib/tracker');
+const logs = require('./lib/logs');
 const { pidsOf, spawnDetached } = require('./lib/system');
 
 const DEFAULTS = {
@@ -22,7 +24,10 @@ const DEFAULTS = {
   fflagsImported: false,
   preset: null,
   hardware: null,
-  launch: { multiInstance: false, applyMods: true, highPriority: false, minimizeOnLaunch: true },
+  launch: { multiInstance: false, applyMods: true, highPriority: false, playMode: 'leger' },
+  pendingSince: null, // mode léger : début de la partie en cours pendant que BloxPlus est fermé (ms)
+  countedLogs: [], // logs Roblox dont le temps a déjà été ajouté (évite les doublons)
+  logsImported: {}, // logs Roblox déjà lus pour les jeux récents : nom → date de modification
   shaders: { enabled: false, preset: '1-naturel' },
   overlay: { enabled: false },
   notify: { friends: true, serverRegion: false, adminInServer: true },
@@ -32,7 +37,8 @@ const DEFAULTS = {
   adminWatch: { ids: [] },
   playtime: { totalSeconds: 0, xp: 0, byDay: {}, byPlace: {} },
   accent: '#7c5cff',
-  protocolEnabled: false,
+  protocolEnabled: true,
+  roblox: { latest: null },
   protocolBackup: {},
 };
 
@@ -47,25 +53,43 @@ const presetsDir = app.isPackaged
 
 let mainWindow = null;
 let overlayWindow = null;
+let tray = null;
+let playHidden = false; // fenêtre détruite exprès pendant le jeu : ne pas quitter
+let overlayTimer = null;
 let mutexHolder = null;
 const tracker = new Tracker(store);
 
 // ---------- Lancement de Roblox ----------
 
-function prepareVersion() {
-  const v = findPlayerVersionDir();
-  if (!v) throw new Error("Roblox n'est pas installé (RobloxPlayerBeta.exe introuvable). Installez-le depuis roblox.com.");
+function prepareVersion(v, warnings) {
   fflags.writeToVersion(v.dir, store.data.fflags);
-  const warnings = [];
   try {
     if (store.data.launch.applyMods) mods.apply(v.dir, modsDir);
     else mods.restore(v.dir);
   } catch (e) { warnings.push(`Mods : ${e.message}`); }
   try {
     const r = shaders.apply(v.dir, reshadeStore, presetsDir, store.data.shaders);
-    if (r === 'missing') warnings.push("Shaders activés mais ReShade n'est pas encore importé.");
+    if (r === 'missing') {
+      installShaders().then(() => applyShadersIfIdle()).catch(() => { /* signalé par shaders:progress */ });
+      warnings.push('Shaders : téléchargement de ReShade en cours, ils seront actifs au prochain lancement.');
+    }
   } catch (e) { warnings.push(`Shaders : ${e.message}`); }
-  return { v, warnings };
+}
+
+// ReShade et les shaders sont téléchargés une seule fois (promesse partagée), avec l'avancement en direct.
+let shaderInstall = null;
+function installShaders() {
+  if (!shaderInstall) {
+    shaderInstall = shaders.install(reshadeStore, { onProgress: (p) => send('shaders:progress', p) }).finally(() => { shaderInstall = null; });
+  }
+  return shaderInstall;
+}
+
+// Fin du téléchargement : on installe dans la version de Roblox si elle n'est pas ouverte (sinon au prochain lancement).
+async function applyShadersIfIdle() {
+  const v = currentVersion();
+  if (!v || !store.data.shaders.enabled || (await pidsOf('RobloxPlayerBeta.exe')).length) return;
+  try { shaders.apply(v.dir, reshadeStore, presetsDir, store.data.shaders); } catch { /* retenté au lancement */ }
 }
 
 // Garde le mutex de Roblox pour autoriser plusieurs fenêtres (comme Bloxstrap / BetterStrap).
@@ -80,13 +104,62 @@ function releaseMultiInstanceMutex() {
   mutexHolder = null;
 }
 
+// ---------- Installation / mise à jour de Roblox par BloxPlus ----------
+
+function emitProgress(p) {
+  send('roblox:progress', p);
+  // Lancé sans fenêtre (clic sur le site) : on montre l'avancement si Roblox doit être installé.
+  if ((p.phase === 'download' || p.phase === 'extract') && !mainWindow && !CAPTURE) showMainWindow(true);
+}
+
+let installing = null;
+function installRoblox() {
+  if (!installing) {
+    installing = installer.ensure({
+      extraRoots: versionRoots.filter((r) => r !== bloxplusVersions),
+      onProgress: emitProgress,
+      isRunning: async () => (await pidsOf('RobloxPlayerBeta.exe')).length > 0,
+    }).then((r) => {
+      if (store.data.roblox.latest !== r.version) { store.data.roblox.latest = r.version; store.save(); }
+      return r;
+    }).finally(() => { installing = null; });
+  }
+  return installing;
+}
+
+// Efface les versions de BloxPlus devenues inutiles (une mise à jour faite pendant une partie ne les a pas nettoyées).
+async function cleanOldVersions() {
+  try {
+    const v = currentVersion();
+    if (!v || !v.managedByBloxPlus || (await pidsOf('RobloxPlayerBeta.exe')).length) return;
+    installer.cleanOld(bloxplusVersions, path.basename(v.dir));
+  } catch { /* sans importance */ }
+}
+
+// BloxPlus doit rester le programme associé à roblox:// (le launcher officiel reprend l'association à ses mises à jour).
+async function ensureProtocol() {
+  if (CAPTURE || !store.data.protocolEnabled) return;
+  try { if (!(await protocol.isRegistered())) await protocol.register(store); } catch { /* registre inaccessible */ }
+}
+
 async function launch(uri) {
   const running = (await pidsOf('RobloxPlayerBeta.exe')).length > 0;
   if (store.data.launch.multiInstance) ensureMultiInstanceMutex();
-  else if (running && !uri) throw new Error('Roblox est déjà ouvert. Activez le multi-instance dans BetterBLOX pour ouvrir plusieurs fenêtres.');
+  else if (running && !uri) throw new Error('Roblox est déjà ouvert. Activez le multi-instance dans Paramètres pour ouvrir plusieurs fenêtres.');
 
-  const { v, warnings } = prepareVersion();
-  spawnDetached(v.exe, uri ? [uri] : [], { cwd: v.dir });
+  const warnings = [];
+  let updated = false;
+  try {
+    updated = (await installRoblox()).updated;
+  } catch (e) {
+    if (!currentVersion()) throw new Error(`Roblox n'a pas pu être installé : ${e.message}`);
+    warnings.push(`Mise à jour de Roblox impossible (${e.message}) : la version déjà installée est utilisée.`);
+  }
+  const v = currentVersion();
+  if (!v) throw new Error('Roblox est introuvable.');
+  prepareVersion(v, warnings);
+  spawnDetached(v.exe, uri ? [uri] : ['--app'], { cwd: v.dir });
+  ensureProtocol();
 
   if (store.data.launch.highPriority) {
     setTimeout(async () => {
@@ -95,8 +168,67 @@ async function launch(uri) {
       }
     }, 10000);
   }
-  if (store.data.launch.minimizeOnLaunch && mainWindow && !CAPTURE) mainWindow.minimize();
-  return { ok: true, version: v.name, warnings };
+  tracker.watchStart();
+  return { ok: true, version: v.name, warnings, updated };
+}
+
+// ---------- Mode de jeu léger : passage de relais au gardien (CONTRACTS §2.3 bis) ----------
+
+function gardienPath() {
+  // Emballé : resources/gardien.exe (extraResources) ; en développement : native/gardien/ (npm run build:gardien).
+  const candidates = [path.join(process.resourcesPath || '', 'gardien.exe'), path.join(__dirname, 'native', 'gardien', 'gardien.exe')];
+  return candidates.find((p) => fs.existsSync(p)) || null;
+}
+
+// BloxPlus quitte entièrement ; le gardien (quelques Mo) le relance avec --after-play quand Roblox est fermé.
+// Renvoie false si le gardien est introuvable : BloxPlus reste alors en mode complet.
+function handOffToGardien() {
+  const g = gardienPath();
+  if (!g) return false;
+  const exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  const args = ['--relaunch', exe];
+  // electron.exe a besoin du dossier de l'application (hors version installée) ; --user-data-dir est transmis tel quel (essais).
+  const extra = [...(app.isPackaged ? [] : [app.getAppPath()]), ...process.argv.filter((a) => a.startsWith('--user-data-dir='))];
+  if (extra.length) args.push('--args', extra.map((a) => `"${a}"`).join(' '));
+  if (store.data.launch.multiInstance) args.push('--multi');
+
+  const previous = store.data.pendingSince;
+  tracker.muted = true; // le temps de cette partie sera relu dans les logs
+  store.data.pendingSince = Math.min(previous || Infinity, tracker.sessionStart);
+  tracker.flush();
+  const child = spawnDetached(g, args, { windowsHide: true });
+  child.once('error', () => { // gardien impossible à lancer : on reste là
+    tracker.muted = false;
+    store.data.pendingSince = previous;
+    enterPlayMode();
+  });
+  child.once('spawn', () => { releaseMultiInstanceMutex(); app.exit(0); });
+  return true;
+}
+
+// Ajoute au temps de jeu les parties jouées pendant que BloxPlus était fermé, d'après l'horodatage des logs Roblox.
+function reconstructSessions() {
+  const since = store.data.pendingSince;
+  if (!since) return;
+  try {
+    const sessions = logs.readSessions(logsDir, since - 60000).filter((s) => s.start >= since - 60000);
+    const r = logs.applySessions(store.data.playtime, sessions, store.data.countedLogs);
+    store.data.countedLogs = r.counted;
+  } catch { /* logs illisibles : on abandonne ce relevé, sans bloquer le démarrage */ }
+  store.data.pendingSince = null;
+  store.save();
+}
+
+// Jeux récents dès le premier lancement (CONTRACTS §2.5) : complète lastPlayed / universeId d'après les anciens logs,
+// sans toucher aux secondes (aucun temps inventé). Chaque log n'est lu qu'une fois tant qu'il ne change pas.
+async function importOldGames() {
+  try {
+    const seen = store.data.logsImported;
+    const { sessions, scanned } = await logs.readSessionsAsync(logsDir, { skip: (f) => seen[f.name] === f.mtime });
+    const changed = logs.importHistory(store.data.playtime, sessions);
+    store.data.logsImported = Object.fromEntries(scanned.map((f) => [f.name, f.mtime]));
+    if (changed || sessions.length) store.save();
+  } catch { /* logs illisibles : les jeux récents se rempliront en jouant */ }
 }
 
 // ---------- Infos sur le jeu en cours ----------
@@ -126,14 +258,24 @@ tracker.on('joined', async (cur) => {
   send('tracker:event', { type: 'joined', state: tracker.state() });
 });
 tracker.on('left', () => send('tracker:event', { type: 'left', state: tracker.state() }));
-tracker.on('started', () => {
+tracker.on('started', ({ initial } = {}) => {
+  // Roblox tournait déjà à l'ouverture de BloxPlus : le joueur l'a ouvert exprès, on ne le cache pas.
+  // Si une partie en mode léger est en cours, son temps sera relu dans les logs à la fin.
+  if (initial && store.data.pendingSince) tracker.muted = true;
+  if (!initial && !CAPTURE && store.data.launch.playMode !== 'complet' && handOffToGardien()) return;
   if (store.data.overlay.enabled) showOverlay();
   send('tracker:event', { type: 'started', state: tracker.state() });
+  syncWatchers();
+  if (!initial && !CAPTURE) enterPlayMode();
 });
 tracker.on('stopped', () => {
+  if (store.data.pendingSince) { reconstructSessions(); tracker.muted = false; }
   hideOverlay();
-  if (mainWindow?.isMinimized()) mainWindow.restore();
+  alertedAdmins.clear();
+  syncWatchers();
+  showMainWindow();
   send('tracker:event', { type: 'stopped', state: tracker.state() });
+  ensureProtocol();
 });
 
 // ---------- Surveillance : amis en ligne & admins dans le serveur ----------
@@ -150,7 +292,7 @@ async function presenceOf(ids) {
 let lastFriendState = null;
 async function watchFriends() {
   const uid = store.data.profile.userId;
-  if (!uid) return;
+  if (!uid || !store.data.notify.friends) return;
   try {
     const fr = await api.request({ url: `https://friends.roblox.com/v1/users/${uid}/friends`, ttl: 300e3 });
     const ids = (fr.data || []).map((f) => f.id);
@@ -175,6 +317,25 @@ async function watchFriends() {
     }
     lastFriendState = state;
   } catch { /* réseau */ }
+}
+
+// Les surveillances ne tournent que si une notification en dépend (légèreté).
+let friendsTimer = null;
+let adminsTimer = null;
+function syncWatchers() {
+  if (CAPTURE) return;
+  const wantFriends = store.data.notify.friends && !!store.data.profile.userId;
+  const wantAdmins = store.data.notify.adminInServer && (store.data.adminWatch.ids || []).length > 0 && tracker.running;
+  if (wantFriends && !friendsTimer) {
+    friendsTimer = setInterval(watchFriends, 90e3);
+    setTimeout(watchFriends, 5000);
+  } else if (!wantFriends && friendsTimer) {
+    clearInterval(friendsTimer);
+    friendsTimer = null;
+    lastFriendState = null;
+  }
+  if (wantAdmins && !adminsTimer) adminsTimer = setInterval(watchAdmins, 60e3);
+  else if (!wantAdmins && adminsTimer) { clearInterval(adminsTimer); adminsTimer = null; }
 }
 
 const alertedAdmins = new Set();
@@ -219,21 +380,55 @@ function showOverlay() {
   overlayWindow.loadFile(path.join(__dirname, 'overlay', 'overlay.html'));
   overlayWindow.once('ready-to-show', () => overlayWindow?.showInactive());
   overlayWindow.on('closed', () => { overlayWindow = null; });
+  overlayTimer = setInterval(() => {
+    overlayWindow?.webContents.send('overlay:update', { ...tracker.state(), today: store.data.playtime.byDay[new Date().toISOString().slice(0, 10)] || 0 });
+  }, 1000);
 }
 
 function hideOverlay() {
+  clearInterval(overlayTimer);
+  overlayTimer = null;
   overlayWindow?.close();
   overlayWindow = null;
 }
-
-setInterval(() => {
-  if (overlayWindow) overlayWindow.webContents.send('overlay:update', { ...tracker.state(), today: store.data.playtime.byDay[new Date().toISOString().slice(0, 10)] || 0 });
-}, 1000);
 
 // ---------- Fenêtre ----------
 
 function send(channel, payload) {
   mainWindow?.webContents.send(channel, payload);
+}
+
+// Pendant le jeu : fenêtre détruite (processus de rendu libéré), seule l'icône de notification reste.
+function enterPlayMode() {
+  playHidden = true;
+  if (!tray) {
+    tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'assets', 'icon.png')).resize({ width: 16, height: 16 }));
+    tray.setToolTip('BloxPlus — en jeu');
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Ouvrir BloxPlus', click: () => showMainWindow(true) },
+      { label: 'Quitter', click: () => { playHidden = false; app.quit(); } },
+    ]));
+    tray.on('click', () => showMainWindow(true));
+  }
+  if (mainWindow) mainWindow.destroy();
+}
+
+// Affiche BloxPlus au premier plan (recrée la fenêtre si elle a été détruite). Appelé quand Roblox se ferme.
+function showMainWindow(force = false) {
+  if (!force && !playHidden && !mainWindow) return;
+  playHidden = false;
+  if (tray) { tray.destroy(); tray = null; }
+  if (!mainWindow) { createWindow(); return; }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  bringToFront(mainWindow);
+}
+
+function bringToFront(win) {
+  win.show();
+  win.setAlwaysOnTop(true);
+  win.moveTop();
+  win.focus();
+  win.setAlwaysOnTop(false);
 }
 
 function createWindow() {
@@ -244,10 +439,10 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  mainWindow.once('ready-to-show', () => { if (!CAPTURE) mainWindow.show(); });
+  mainWindow.once('ready-to-show', () => { if (!CAPTURE) bringToFront(mainWindow); });
   mainWindow.on('maximize', () => send('win:state', { maximized: true }));
   mainWindow.on('unmaximize', () => send('win:state', { maximized: false }));
-  mainWindow.on('closed', () => { mainWindow = null; hideOverlay(); });
+  mainWindow.on('closed', () => { mainWindow = null; if (!playHidden) hideOverlay(); });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' }; });
   if (CAPTURE) mainWindow.webContents.once('did-finish-load', runCapture);
 }
@@ -256,7 +451,7 @@ function createWindow() {
 async function runCapture() {
   const out = process.env.CAPTURE_DIR || path.join(__dirname, 'captures');
   fs.mkdirSync(out, { recursive: true });
-  const tabs = ['home', 'games', 'friends', 'admins', 'better', 'optimize', 'shaders', 'settings'];
+  const tabs = ['home', 'games', 'friends', 'admins', 'optimize', 'shaders', 'settings'];
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await wait(2500);
   for (const tab of tabs) {
@@ -281,13 +476,13 @@ function openExternal(url) {
 // ---------- IPC ----------
 
 function currentVersion() {
-  return findPlayerVersionDir();
+  return findPlayerVersionDir(store.data.roblox.latest);
 }
 
 const handlers = {
   'app:info': () => {
     const v = currentVersion();
-    return { version: app.getVersion(), roblox: v ? { dir: v.dir, name: v.name } : null, userData, modsDir };
+    return { version: app.getVersion(), roblox: v ? { dir: v.dir, name: v.name, managedByBloxPlus: v.managedByBloxPlus } : null, userData, modsDir };
   },
   'win:minimize': () => mainWindow.minimize(),
   'win:maximize': () => (mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()),
@@ -305,6 +500,7 @@ const handlers = {
     store.set(key, value);
     if (key.startsWith('launch.multiInstance') && !value) releaseMultiInstanceMutex();
     if (key === 'overlay.enabled') (value && tracker.running ? showOverlay() : hideOverlay());
+    if (/^(notify|adminWatch|profile)/.test(key)) syncWatchers();
     return store.data;
   },
   'api:request': (opts) => api.request(opts),
@@ -312,6 +508,10 @@ const handlers = {
   'roblox:launch': (uri) => {
     if (uri != null && !/^roblox(-player)?:/i.test(uri)) throw new Error('Lien de lancement invalide');
     return launch(uri);
+  },
+  'roblox:install': async () => {
+    const r = await installRoblox();
+    return { version: r.version, updated: r.updated };
   },
   'roblox:state': () => tracker.state(),
 
@@ -368,20 +568,30 @@ const handlers = {
     return v ? mods.restore(v.dir) : 0;
   },
 
-  'shaders:status': () => shaders.status(currentVersion()?.dir, reshadeStore),
+  'shaders:status': () => shaders.status(reshadeStore, store.data.shaders),
   'shaders:presets': () => shaders.listPresets(presetsDir),
-  'shaders:import': () => {
-    const v = currentVersion();
-    if (!v) throw new Error('Roblox introuvable');
-    return shaders.importFromRoblox(v.dir, reshadeStore);
-  },
-  'shaders:set': async (cfg) => {
-    store.set('shaders', { ...store.data.shaders, ...cfg });
-    const v = currentVersion();
+  // → { result: 'applied' | 'pending' | 'downloading' | 'error', running, message? } (CONTRACTS §2.4)
+  'shaders:set': async (cfg = {}) => {
+    const next = { ...store.data.shaders };
+    if (typeof cfg.enabled === 'boolean') next.enabled = cfg.enabled;
+    if (typeof cfg.preset === 'string') {
+      if (!fs.existsSync(path.join(presetsDir, `${path.basename(cfg.preset)}.ini`))) return { result: 'error', running: false, message: 'Style de shaders inconnu.' };
+      next.preset = cfg.preset;
+    }
+    store.set('shaders', next);
     const running = (await pidsOf('RobloxPlayerBeta.exe')).length > 0;
-    let result = 'pending';
-    if (v && !running) result = shaders.apply(v.dir, reshadeStore, presetsDir, store.data.shaders);
-    return { result, running };
+    if (next.enabled && !shaders.status(reshadeStore, next).installed) {
+      installShaders().then(() => applyShadersIfIdle()).catch(() => { /* l'erreur est déjà signalée par shaders:progress */ });
+      return { result: 'downloading', running };
+    }
+    const v = currentVersion();
+    if (!v || running) return { result: 'pending', running };
+    try {
+      shaders.apply(v.dir, reshadeStore, presetsDir, next);
+      return { result: 'applied', running };
+    } catch (e) {
+      return { result: 'error', running, message: e.message };
+    }
   },
 
   'protocol:get': () => protocol.isRegistered(),
@@ -415,11 +625,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', (_e, argv) => {
     const uri = protocol.extractUri(argv);
     if (uri) return handleUri(uri);
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    showMainWindow(true);
   });
 
   app.whenReady().then(async () => {
@@ -432,25 +638,49 @@ if (!app.requestSingleInstanceLock()) {
       store.save();
     }
     mods.ensureModsDir(modsDir);
+    // minimizeOnLaunch (v1) → hideDuringPlay (1.1) → playMode (1.5) : on reprend le choix de l'utilisateur.
+    const launchCfg = store.data.launch;
+    if ('minimizeOnLaunch' in launchCfg) {
+      launchCfg.hideDuringPlay = launchCfg.minimizeOnLaunch;
+      delete launchCfg.minimizeOnLaunch;
+    }
+    if ('hideDuringPlay' in launchCfg) {
+      launchCfg.playMode = launchCfg.hideDuringPlay === false ? 'complet' : 'leger';
+      delete launchCfg.hideDuringPlay;
+      store.save();
+    }
 
+    // Retour d'une partie jouée en mode léger (--after-play) ou reprise après un arrêt brutal : on relit les logs.
+    if (store.data.pendingSince && !(await pidsOf('RobloxPlayerBeta.exe')).length) reconstructSessions();
+
+    if (!CAPTURE) tracker.start();
     const uri = protocol.extractUri(process.argv);
-    if (uri) {
+    if (uri && !CAPTURE) {
+      // Lancé depuis le site : pas de fenêtre, seulement l'icône ; elle apparaît à la fin de la partie
+      // (ou tout de suite si Roblox ne démarre pas).
+      enterPlayMode();
       await handleUri(uri);
-      // Lancé depuis le site : on ne garde que le suivi en arrière-plan, sans fenêtre.
+      importOldGames();
+      setTimeout(() => { if (playHidden && !tracker.running) showMainWindow(true); }, 120e3);
+    } else {
+      if (uri) await handleUri(uri);
+      if (!CAPTURE) await importOldGames(); // avant la fenêtre : l'Accueil trouve déjà les jeux récents
+      if (!mainWindow) createWindow(); // la mise à jour de Roblox a pu l'ouvrir déjà
+      if (uri) mainWindow.once('ready-to-show', () => mainWindow.minimize());
     }
-    createWindow();
-    if (uri) mainWindow.once('ready-to-show', () => mainWindow.minimize());
 
-    if (store.data.protocolEnabled && !(await protocol.isRegistered())) await protocol.register(store);
-    if (!CAPTURE) {
-      tracker.start();
-      setInterval(watchFriends, 90e3);
-      setInterval(watchAdmins, 60e3);
-      setTimeout(watchFriends, 5000);
-    }
+    await ensureProtocol();
+    syncWatchers();
+    cleanOldVersions();
+  });
+
+  app.on('before-quit', () => {
+    tracker.stop();
+    releaseMultiInstanceMutex();
   });
 
   app.on('window-all-closed', () => {
+    if (playHidden) return; // en jeu : seule l'icône de notification reste
     tracker.stop();
     releaseMultiInstanceMutex();
     app.quit();
