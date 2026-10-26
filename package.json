@@ -1,7 +1,7 @@
 {
   "name": "bloxplus-launcher",
   "productName": "BloxPlus Launcher",
-  "version": "1.0.0",
+  "version": "1.1.0-beta.1",
   "description": "Launcher Roblox amélioré : fonctions BetterBLOX, admins, optimisation automatique et shaders.",
   "main": "main.js",
   "author": "bibouze",

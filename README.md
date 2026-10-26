@@ -1,6 +1,9 @@
 # BloxPlus Launcher
 
-Un launcher Roblox pour Windows, plus beau que celui d'origine, avec les options de **BetterBLOX** (BetterStrap / BetterLauncher), un onglet **Admins**, une **optimisation automatique** selon ton PC et des **shaders** pour embellir le jeu.
+Un launcher Roblox pour Windows, plus beau et plus léger que celui d'origine, avec les options de type BetterBLOX intégrées, un onglet **Admins**, une **optimisation automatique** selon ton PC et des **shaders** pour embellir le jeu.
+
+- **Remplace le launcher Roblox** : BloxPlus installe et met à jour Roblox lui-même et ouvre les liens `roblox://`.
+- **Mode de jeu léger** : BloxPlus se ferme pendant la partie et revient à la fermeture de Roblox.
 
 ![Accueil](docs/home.png)
 
@@ -12,10 +15,9 @@ Un launcher Roblox pour Windows, plus beau que celui d'origine, avec les options
 | **Jeux & serveurs** | Recherche de jeux, tendances, favoris. Pour chaque jeu : liste des serveurs publics avec ping, FPS et remplissage, bouton « Meilleur serveur » (ping le plus bas) et « Petit serveur ». |
 | **Amis** | Amis en ligne / en jeu, bouton Rejoindre, « vu en ligne pour la dernière fois » mémorisé par le launcher, notifications de connexion. |
 | **Admins** | Le staff officiel de Roblox (groupe 1200769, rangs 100 et plus) ou les admins de n'importe quel groupe, avec leur statut. Alerte si un admin se trouve sur ton serveur. |
-| **BetterBLOX** | Éditeur de FastFlags (réglages simples + édition libre, import/export JSON, indication des flags autorisés par Roblox), multi-instance, mods, région du serveur à la connexion, overlay du temps de jeu, notifications. |
-| **Optimisation** | Analyse du PC (CPU, GPU, VRAM, RAM, écran) avec un score sur 100, optimisation automatique, 4 niveaux comparables (Performance max, Équilibré, Qualité, Beauté ultra), GPU haute performance, optimisations plein écran, priorité haute, nettoyage du cache. |
-| **Shaders** | Installation guidée de ReShade, 5 styles fournis (Naturel+, Vibrant, Cinématique, Réaliste HDR, Rêve pastel), réapplication automatique après chaque mise à jour de Roblox. |
-| **Paramètres** | Pseudo Roblox, ouverture des jeux de roblox.com avec BloxPlus, couleur du launcher. |
+| **Optimisation** | Analyse du PC (CPU, GPU, VRAM, RAM, écran) avec un score sur 100, optimisation automatique, 4 niveaux comparables (Performance max, Équilibré, Qualité, Beauté ultra), éditeur de FastFlags dans Réglages avancés (réglages simples + édition libre, import/export JSON, flags autorisés par Roblox), GPU haute performance, optimisations plein écran, priorité haute, nettoyage du cache. |
+| **Shaders** | Un interrupteur : ReShade et SweetFX téléchargés depuis leurs sources officielles, 5 styles fournis (Naturel+, Vibrant, Cinématique, Réaliste HDR, Rêve pastel), réapplication automatique après chaque mise à jour de Roblox. |
+| **Paramètres** | Pseudo Roblox, ouverture des jeux de roblox.com avec BloxPlus, couleur du launcher, multi-instance, mods, région du serveur à la connexion, overlay du temps de jeu, notifications, mode de jeu. |
 
 <p>
   <img src="docs/games.png" width="49%" alt="Jeux">
@@ -24,7 +26,11 @@ Un launcher Roblox pour Windows, plus beau que celui d'origine, avec les options
   <img src="docs/shaders.png" width="49%" alt="Shaders">
 </p>
 
-## Installation
+## Télécharger
+
+Installateur et version portable : [dernière release](https://github.com/bibouze/bloxplus-launcher/releases/latest). Les bêtas (par exemple 1.1.0-beta.1) sont dans [Releases](https://github.com/bibouze/bloxplus-launcher/releases), marquées « Pre-release ».
+
+## Installation depuis les sources
 
 Il faut [Node.js](https://nodejs.org) 20 ou plus récent.
 
